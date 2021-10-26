@@ -1,7 +1,7 @@
 package main
 
 import (
-    // "errors"
+    "errors"
     "fmt"
     "net"
     "net/rpc"
@@ -22,6 +22,7 @@ type Server struct {
 }
 
 type Args struct {
+    ID uint64
     Nombre, Materia string
     Cal float64
 }
@@ -69,78 +70,64 @@ func (t *Server) AddGrade(args Args, reply *int) error {
     return nil
 }
 
-// func (t *Server) AddGrade(args Args, reply *int) error {
-//     fmt.Println()
-//     if _, err := t.Alumnos[args.Nombre]; err {
-//         t.Alumnos[args.Nombre][args.Materia] = args.Cal
-//     } else {
-//         fmt.Printf("[Nuevo alumno añadido: %s]\n", args.Nombre)
-//         m := make(map[string] float64)
-//         m[args.Materia] = args.Cal
-//         t.Alumnos[args.Nombre] = m
-//     }
-//     if _, err := t.Materias[args.Materia]; err {
-//         t.Materias[args.Materia][args.Nombre] = args.Cal
-//     } else {
-//         fmt.Printf("[Nueva materia añadida: %s]\n", args.Materia)
-//         n := make( map[string] float64 )
-//         n[args.Nombre] = args.Cal
-//         t.Materias[args.Materia] = n
-//     }
-//     printData("Alumnos: ", t.Alumnos)
-//     printData("Materias: ", t.Materias)
-//     fmt.Println("-----------------------------------------")
-//     return nil
-// }
+func (t *Server) mean(tp string, id uint64) float64 {
+    var res float64
+    var n float64
+    var m map[uint64]Node
+    if tp == "student" {
+        m = t.Alumnos[id].Value
+    } else if tp == "class" {
+        m = t.Materias[id].Value
+    }
+    for _, v := range m {
+        res += v.Value
+        n++
+    }
+    res /= n
+    return res
+}
 
-// func (t *Server) studentMean(name string) float64 {
-//     var res float64
-//     var n float64
-//     for _, v := range t.Alumnos[name] {
-//         res += v
-//         n++
-//     }
-//     res /= n
-//     return res
-// }
+func (t *Server) generalMean() float64 {
+    var res float64
+    var n float64
+    for k := range t.Alumnos {
+        res += t.mean("student", k)
+        n++
+    }
+    res /= n
+    return res
+}
 
-// func (t *Server) StudentMean(args Args, reply *float64) error {
-//     if _, err := t.Alumnos[args.Nombre]; !err {
-//         return errors.New("El usuario " + args.Nombre + " no fue registrado con anterioridad")
-//     }
-//     (*reply) = t.studentMean(args.Nombre)
-//     return nil
-// }
+func (t *Server) StudentMean(args Args, reply *float64) error {
+    if _, err := t.Alumnos[args.ID]; !err {
+        return errors.New("El usuario " + args.Nombre + " no fue registrado con anterioridad")
+    }
+    (*reply) = t.mean("student", args.ID)
+    return nil
+}
 
-// func (t *Server) GeneralMean(args Args, reply *float64) error {
-//     if len(t.Alumnos) == 0 {
-//         return errors.New("No hay alumnos registrados")
-//     }
-//     var res float64
-//     var n float64
-//     for k, _ := range t.Alumnos {
-//         res += t.studentMean(k)
-//         n++
-//     }
-//     res /= n
-//     (*reply) = res
-//     return nil
-// }
+func (t *Server) GeneralMean(args Args, reply *float64) error {
+    if len(t.Alumnos) == 0 {
+        return errors.New("No hay alumnos registrados")
+    }
+    (*reply) = t.generalMean()
+    return nil
+}
 
-// func (t *Server) ClassMean(args Args, reply *float64) error  {
-//     if _, err := t.Materias[args.Materia]; !err {
-//         return errors.New("La materia " + args.Materia + " no fue registrada con anterioridad")
-//     }
-//     var res float64
-//     var n float64
-//     for _, v := range t.Materias[args.Materia] {
-//         res += v
-//         n++
-//     }
-//     res /= n
-//     (*reply) = res
-//     return nil
-// }
+func (t *Server) ClassMean(args Args, reply *float64) error  {
+    if _, err := t.Materias[args.ID]; !err {
+        return errors.New("La materia " + args.Materia + " no fue registrada con anterioridad")
+    }
+    var res float64
+    var n float64
+    for _, v := range t.Materias[args.ID].Value {
+        res += v.Value
+        n++
+    }
+    res /= n
+    (*reply) = res
+    return nil
+}
 
 func handleRpc(s *Server) {
     rpc.Register(s)
