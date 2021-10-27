@@ -3,6 +3,8 @@ package main
 import (
     "errors"
     "fmt"
+    "strings"
+    "strconv"
     "encoding/json"
     "net"
     "net/rpc"
@@ -156,12 +158,7 @@ func Add(args Args) {
     fmt.Println("-----------------------------------------")
 }
 
-// Transforma el map de alumnos del server a formato JSON y los retorna
-func Get() ([]byte, error) {
-    return json.MarshalIndent((*server).Alumnos, "", "    ")
-}
-
-func handler(res http.ResponseWriter, req *http.Request) {
+func CrudHandler(res http.ResponseWriter, req *http.Request) {
     switch req.Method {
     // Agregar alumno, materia y calificación
     case "POST":
@@ -175,31 +172,43 @@ func handler(res http.ResponseWriter, req *http.Request) {
         res_json := []byte(`{"code": "ok"}`)
         res.Header().Set("Content-Type", "application/json")
         res.Write(res_json)
-    // Devolver al cliente todos los alumnos junto a su lista de materias y calificación
     case "GET":
-        res_json, err := Get()
+        var res_json []byte
+        var err error
+        var id uint64
+        idStr := strings.TrimPrefix(req.URL.Path, "/data/")
+        // Devolver al cliente las materias (con calificación) de un alumno por id (GET/{id})
+        if idStr != "/data" {
+            id, err = strconv.ParseUint(idStr, 10, 64)
+            if _, exists := (*server).Alumnos[id]; exists {
+                res_json, err = json.MarshalIndent((*server).Alumnos[id], "", "    ")
+            } else {
+                http.Error(res, "El alumno proporcionado no existe", http.StatusNotFound)
+            }
+        // Devolver al cliente todos los alumnos junto a su lista de materias y calificación
+        } else {
+            // Si aún no hay alumnos registrados
+            if len((*server).Alumnos) == 0 {
+                res_json = []byte(`{"code": "empty"}`)
+            } else {
+                res_json, err = json.MarshalIndent((*server).Alumnos, "", "    ")
+            }
+        }
         if err != nil {
             http.Error(res, err.Error(), http.StatusInternalServerError)
             return
         }
         res.Header().Set("Content-Type", "application/json")
         res.Write(res_json)
+    // TODO: Eliminar por id un alumno (DELETE/{id})
+    case "DELETE":
+    // TODO: Modificar la calificación de un alumno (PUT/JSON)
+    case "PUT":
     }
 }
 
-// TODO: Devolver al cliente las materias (con calificación) de un alumno por id (GET/{id})
 func getID(res http.ResponseWriter, req *http.Request) {
-    
-}
 
-// TODO: Eliminar por id un alumno (DELETE/{id})
-func del(res http.ResponseWriter, req *http.Request) {
-    
-}
-
-// TODO: Modificar la calificación de un alumno (PUT/JSON)
-func update(res http.ResponseWriter, req *http.Request) {
-    
 }
 
 func main() {
@@ -210,10 +219,10 @@ func main() {
     // Pointer used for a singleton style
     server = s
     // Peticiones HTTP
-    http.HandleFunc("/add", handler)
-    http.HandleFunc("/data", handler)
-    http.HandleFunc("/data/{id}", getID)
-    http.HandleFunc("/delete/{id}", del)
-    http.HandleFunc("/modify", update)
+    http.HandleFunc("/add", CrudHandler)
+    http.HandleFunc("/data", CrudHandler)
+    http.HandleFunc("/data/", CrudHandler)
+    http.HandleFunc("/delete/", CrudHandler)
+    http.HandleFunc("/modify", CrudHandler)
     http.ListenAndServe(":9000", nil)
 }
