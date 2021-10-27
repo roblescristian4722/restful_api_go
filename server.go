@@ -132,6 +132,7 @@ func handleRpc(s *Server) {
     }
 }
 
+// Añade un usuario con su respectiva calificación y materia a los dos maps del server
 func Add(args Args) {
     fmt.Println()
     a := exists((*server).Alumnos, args.Nombre)
@@ -155,9 +156,14 @@ func Add(args Args) {
     fmt.Println("-----------------------------------------")
 }
 
-// TODO: Agregar alumno, materia y calificación (POST)
-func add(res http.ResponseWriter, req *http.Request) {
+// Transforma el map de alumnos del server a formato JSON y los retorna
+func Get() ([]byte, error) {
+    return json.MarshalIndent((*server).Alumnos, "", "    ")
+}
+
+func handler(res http.ResponseWriter, req *http.Request) {
     switch req.Method {
+    // Agregar alumno, materia y calificación
     case "POST":
         var args Args
         err := json.NewDecoder(req.Body).Decode(&args)
@@ -169,12 +175,16 @@ func add(res http.ResponseWriter, req *http.Request) {
         res_json := []byte(`{"code": "ok"}`)
         res.Header().Set("Content-Type", "application/json")
         res.Write(res_json)
+    // Devolver al cliente todos los alumnos junto a su lista de materias y calificación
+    case "GET":
+        res_json, err := Get()
+        if err != nil {
+            http.Error(res, err.Error(), http.StatusInternalServerError)
+            return
+        }
+        res.Header().Set("Content-Type", "application/json")
+        res.Write(res_json)
     }
-}
-
-// TODO: Devolver al cliente todos los alumnos junto a su lista de materias y calificación
-func get(res http.ResponseWriter, req *http.Request) {
-    
 }
 
 // TODO: Devolver al cliente las materias (con calificación) de un alumno por id (GET/{id})
@@ -200,8 +210,8 @@ func main() {
     // Pointer used for a singleton style
     server = s
     // Peticiones HTTP
-    http.HandleFunc("/add", add)
-    http.HandleFunc("/data", get)
+    http.HandleFunc("/add", handler)
+    http.HandleFunc("/data", handler)
     http.HandleFunc("/data/{id}", getID)
     http.HandleFunc("/delete/{id}", del)
     http.HandleFunc("/modify", update)
