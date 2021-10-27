@@ -3,8 +3,10 @@ package main
 import (
     "errors"
     "fmt"
+    "encoding/json"
     "net"
     "net/rpc"
+    "net/http"
 )
 
 type Node struct {
@@ -20,6 +22,8 @@ type InnerMap struct {
 type Server struct {
     Materias, Alumnos map[uint64] InnerMap
 }
+
+var server *Server
 
 type Args struct {
     ID uint64
@@ -47,26 +51,7 @@ func exists(m map[uint64]InnerMap, n string) uint64 {
 }
 
 func (t *Server) AddGrade(args Args, reply *int) error {
-    fmt.Println()
-    a := exists(t.Alumnos, args.Nombre)
-    m := exists(t.Materias, args.Materia)
-    if a == uint64(len(t.Alumnos)) {
-        t.Alumnos[a] = InnerMap{ Name: args.Nombre, Value: make(map[uint64]Node) }
-        t.Alumnos[a].Value[m] = Node{ Name: args.Materia, Value: args.Cal }
-        fmt.Printf("[Nuevo alumno añadido: %s]\n", args.Nombre)
-    } else {
-        t.Alumnos[a].Value[m] = Node{ Name: args.Materia, Value: args.Cal }
-    }
-    if m == uint64(len(t.Materias)) {
-        t.Materias[m] = InnerMap{ Name: args.Materia, Value: make(map[uint64]Node) }
-        t.Materias[m].Value[a] = Node{ Name: args.Nombre, Value: args.Cal }
-        fmt.Printf("[Nueva materia añadida: %s]\n", args.Materia)
-    } else {
-        t.Materias[m].Value[a] = Node{ Name: args.Nombre, Value: args.Cal }
-    }
-    printData("Alumnos: ", t.Alumnos)
-    printData("Materias: ", t.Materias)
-    fmt.Println("-----------------------------------------")
+    Add(args)
     return nil
 }
 
@@ -147,10 +132,78 @@ func handleRpc(s *Server) {
     }
 }
 
+func Add(args Args) {
+    fmt.Println()
+    a := exists((*server).Alumnos, args.Nombre)
+    m := exists((*server).Materias, args.Materia)
+    if a == uint64(len((*server).Alumnos)) {
+        (*server).Alumnos[a] = InnerMap{ Name: args.Nombre, Value: make(map[uint64]Node) }
+        (*server).Alumnos[a].Value[m] = Node{ Name: args.Materia, Value: args.Cal }
+        fmt.Printf("[Nuevo alumno añadido: %s]\n", args.Nombre)
+    } else {
+        (*server).Alumnos[a].Value[m] = Node{ Name: args.Materia, Value: args.Cal }
+    }
+    if m == uint64(len((*server).Materias)) {
+        (*server).Materias[m] = InnerMap{ Name: args.Materia, Value: make(map[uint64]Node) }
+        (*server).Materias[m].Value[a] = Node{ Name: args.Nombre, Value: args.Cal }
+        fmt.Printf("[Nueva materia añadida: %s]\n", args.Materia)
+    } else {
+        (*server).Materias[m].Value[a] = Node{ Name: args.Nombre, Value: args.Cal }
+    }
+    printData("Alumnos: ", (*server).Alumnos)
+    printData("Materias: ", (*server).Materias)
+    fmt.Println("-----------------------------------------")
+}
+
+// TODO: Agregar alumno, materia y calificación (POST)
+func add(res http.ResponseWriter, req *http.Request) {
+    switch req.Method {
+    case "POST":
+        var args Args
+        err := json.NewDecoder(req.Body).Decode(&args)
+        if err != nil {
+            http.Error(res, err.Error(), http.StatusBadRequest)
+            return
+        }
+        Add(args)
+        res_json := []byte(`{"code": "ok"}`)
+        res.Header().Set("Content-Type", "application/json")
+        res.Write(res_json)
+    }
+}
+
+// TODO: Devolver al cliente todos los alumnos junto a su lista de materias y calificación
+func get(res http.ResponseWriter, req *http.Request) {
+    
+}
+
+// TODO: Devolver al cliente las materias (con calificación) de un alumno por id (GET/{id})
+func getID(res http.ResponseWriter, req *http.Request) {
+    
+}
+
+// TODO: Eliminar por id un alumno (DELETE/{id})
+func del(res http.ResponseWriter, req *http.Request) {
+    
+}
+
+// TODO: Modificar la calificación de un alumno (PUT/JSON)
+func update(res http.ResponseWriter, req *http.Request) {
+    
+}
+
 func main() {
-    arith := new(Server)
-    arith.Alumnos = make(map[uint64]InnerMap)
-    arith.Materias = make(map[uint64]InnerMap)
-    go handleRpc(arith)
-    fmt.Scanln()
+    s := new(Server)
+    s.Alumnos = make(map[uint64]InnerMap)
+    s.Materias = make(map[uint64]InnerMap)
+    go handleRpc(s)
+    // Pointer used for a singleton style
+    server = s
+    // Peticiones HTTP
+    http.HandleFunc("/add", add)
+    http.HandleFunc("/data", get)
+    http.HandleFunc("/data/{id}", getID)
+    http.HandleFunc("/delete/{id}", del)
+    http.HandleFunc("/modify", update)
+    http.ListenAndServe(":9000", nil)
 }
