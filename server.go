@@ -23,6 +23,7 @@ type InnerMap struct {
 
 type Server struct {
     Materias, Alumnos map[uint64] InnerMap
+    matID, alID uint64
 }
 
 var server *Server
@@ -43,13 +44,15 @@ func printData(title string, m map[uint64]InnerMap) {
     }
 }
 
-func exists(m map[uint64]InnerMap, n string) uint64 {
+func exists(m map[uint64]InnerMap, n string, d *uint64) (uint64, bool) {
     for k, v := range m {
+        fmt.Println(v.Name, n)
         if v.Name == n {
-            return k
+            fmt.Println("iguales")
+            return k, true
         }
     }
-    return uint64(len(m))
+    return (*d), false
 }
 
 func (t *Server) AddGrade(args Args, reply *int) error {
@@ -137,21 +140,45 @@ func handleRpc(s *Server) {
 // Añade un usuario con su respectiva calificación y materia a los dos maps del server
 func Add(args Args) {
     fmt.Println()
-    a := exists((*server).Alumnos, args.Nombre)
-    m := exists((*server).Materias, args.Materia)
-    if a == uint64(len((*server).Alumnos)) {
-        (*server).Alumnos[a] = InnerMap{ Name: args.Nombre, Value: make(map[uint64]Node) }
-        (*server).Alumnos[a].Value[m] = Node{ Name: args.Materia, Value: args.Cal }
+    fmt.Println((*server).alID, (*server).matID)
+    a, af := exists((*server).Alumnos, args.Nombre, &(*server).alID)
+    m, mf := exists((*server).Materias, args.Materia, &(*server).matID)
+    fmt.Println((*server).alID, (*server).matID)
+    fmt.Println("materia mf: ", mf, m)
+    if !af {
+        (*server).Alumnos[(*server).alID] = InnerMap{
+            Name: args.Nombre,
+            Value: make(map[uint64]Node),
+        }
+        (*server).Alumnos[(*server).alID].Value[m] = Node{
+            Name: args.Materia,
+            Value: args.Cal,
+        }
+        (*server).alID++
         fmt.Printf("[Nuevo alumno añadido: %s]\n", args.Nombre)
     } else {
-        (*server).Alumnos[a].Value[m] = Node{ Name: args.Materia, Value: args.Cal }
+        (*server).Alumnos[a].Value[m] = Node{
+            Name: args.Materia,
+            Value: args.Cal,
+        }
     }
-    if m == uint64(len((*server).Materias)) {
-        (*server).Materias[m] = InnerMap{ Name: args.Materia, Value: make(map[uint64]Node) }
-        (*server).Materias[m].Value[a] = Node{ Name: args.Nombre, Value: args.Cal }
+    a, af = exists((*server).Alumnos, args.Nombre, &(*server).alID)
+    if !mf {
+        (*server).Materias[(*server).matID] = InnerMap{
+            Name: args.Materia,
+            Value: make(map[uint64]Node),
+        }
+        (*server).Materias[(*server).matID].Value[a] = Node{
+            Name: args.Nombre,
+            Value: args.Cal,
+        }
+        (*server).matID++
         fmt.Printf("[Nueva materia añadida: %s]\n", args.Materia)
     } else {
-        (*server).Materias[m].Value[a] = Node{ Name: args.Nombre, Value: args.Cal }
+        (*server).Materias[m].Value[a] = Node{
+            Name: args.Nombre,
+            Value: args.Cal,
+        }
     }
     printData("Alumnos: ", (*server).Alumnos)
     printData("Materias: ", (*server).Materias)
@@ -202,13 +229,24 @@ func CrudHandler(res http.ResponseWriter, req *http.Request) {
         res.Write(res_json)
     // TODO: Eliminar por id un alumno (DELETE/{id})
     case "DELETE":
+        id, err := strconv.ParseUint(strings.TrimPrefix(req.URL.Path, "/data/"), 10, 64)
+        if err != nil {
+            http.Error(res, "El alumno proporcionado no existe", http.StatusNotFound)
+            return
+        }
+        if _, exists := (*server).Alumnos[id]; exists {
+            for k, v := range (*server).Materias {
+                if _, exists := v.Value[id]; exists {
+                    delete((*server).Materias[k].Value, id)
+                }
+            }
+            delete((*server).Alumnos, id)
+            printData("Alumnos", (*server).Alumnos)
+            printData("Materias", (*server).Materias)
+        }
     // TODO: Modificar la calificación de un alumno (PUT/JSON)
     case "PUT":
     }
-}
-
-func getID(res http.ResponseWriter, req *http.Request) {
-
 }
 
 func main() {
