@@ -48,7 +48,6 @@ func exists(m map[uint64]InnerMap, n string, d *uint64) (uint64, bool) {
     for k, v := range m {
         fmt.Println(v.Name, n)
         if v.Name == n {
-            fmt.Println("iguales")
             return k, true
         }
     }
@@ -140,11 +139,8 @@ func handleRpc(s *Server) {
 // Añade un usuario con su respectiva calificación y materia a los dos maps del server
 func Add(args Args) {
     fmt.Println()
-    fmt.Println((*server).alID, (*server).matID)
     a, af := exists((*server).Alumnos, args.Nombre, &(*server).alID)
     m, mf := exists((*server).Materias, args.Materia, &(*server).matID)
-    fmt.Println((*server).alID, (*server).matID)
-    fmt.Println("materia mf: ", mf, m)
     if !af {
         (*server).Alumnos[(*server).alID] = InnerMap{
             Name: args.Nombre,
@@ -199,6 +195,7 @@ func CrudHandler(res http.ResponseWriter, req *http.Request) {
         res_json := []byte(`{"code": "ok"}`)
         res.Header().Set("Content-Type", "application/json")
         res.Write(res_json)
+    // Devuelve alumnos
     case "GET":
         var res_json []byte
         var err error
@@ -227,7 +224,7 @@ func CrudHandler(res http.ResponseWriter, req *http.Request) {
         }
         res.Header().Set("Content-Type", "application/json")
         res.Write(res_json)
-    // TODO: Eliminar por id un alumno (DELETE/{id})
+    // Eliminar por id un alumno (DELETE/{id})
     case "DELETE":
         id, err := strconv.ParseUint(strings.TrimPrefix(req.URL.Path, "/data/"), 10, 64)
         if err != nil {
@@ -240,9 +237,11 @@ func CrudHandler(res http.ResponseWriter, req *http.Request) {
                     delete((*server).Materias[k].Value, id)
                 }
             }
+            name := (*server).Alumnos[id].Name
             delete((*server).Alumnos, id)
-            printData("Alumnos", (*server).Alumnos)
-            printData("Materias", (*server).Materias)
+            fmt.Printf("[El alumno %s ha sido eliminado exitosamente]\n", name)
+            printData("Alumnos:", (*server).Alumnos)
+            printData("Materias:", (*server).Materias)
         }
     // TODO: Modificar la calificación de un alumno (PUT/JSON)
     case "PUT":
