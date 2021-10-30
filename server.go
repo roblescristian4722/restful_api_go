@@ -26,6 +26,11 @@ type Server struct {
     matID, alID uint64
 }
 
+type ModJson struct {
+    Alumno, Materia uint64
+    Cal float64
+}
+
 var server *Server
 
 type Args struct {
@@ -46,7 +51,6 @@ func printData(title string, m map[uint64]InnerMap) {
 
 func exists(m map[uint64]InnerMap, n string, d *uint64) (uint64, bool) {
     for k, v := range m {
-        fmt.Println(v.Name, n)
         if v.Name == n {
             return k, true
         }
@@ -136,11 +140,9 @@ func handleRpc(s *Server) {
     }
 }
 
-// Añade un usuario con su respectiva calificación y materia a los dos maps del server
-func Add(args Args) {
-    fmt.Println()
+func AddStudent(args Args) {
     a, af := exists((*server).Alumnos, args.Nombre, &(*server).alID)
-    m, mf := exists((*server).Materias, args.Materia, &(*server).matID)
+    m, _ := exists((*server).Materias, args.Materia, &(*server).matID)
     if !af {
         (*server).Alumnos[(*server).alID] = InnerMap{
             Name: args.Nombre,
@@ -158,7 +160,11 @@ func Add(args Args) {
             Value: args.Cal,
         }
     }
-    a, af = exists((*server).Alumnos, args.Nombre, &(*server).alID)
+}
+
+func AddGrade(args Args) {
+    a, _ := exists((*server).Alumnos, args.Nombre, &(*server).alID)
+    m, mf := exists((*server).Materias, args.Materia, &(*server).matID)
     if !mf {
         (*server).Materias[(*server).matID] = InnerMap{
             Name: args.Materia,
@@ -176,12 +182,85 @@ func Add(args Args) {
             Value: args.Cal,
         }
     }
+}
+
+// Añade un usuario con su respectiva calificación y materia a los dos maps del server
+func Add(args Args) {
+    fmt.Println()
+    AddStudent(args)
+    AddGrade(args)
     printData("Alumnos: ", (*server).Alumnos)
     printData("Materias: ", (*server).Materias)
     fmt.Println("-----------------------------------------")
 }
 
+func Get(idStr string, res *http.ResponseWriter) []byte {
+    var res_json []byte
+    var err error
+    // Devolver al cliente las materias (con calificación) de un alumno por id (GET/{id})
+    if idStr != "/data" {
+        id, _ := strconv.ParseUint(idStr, 10, 64)
+        if _, exists := (*server).Alumnos[id]; exists {
+            res_json, err = json.MarshalIndent((*server).Alumnos[id], "", "    ")
+        } else {
+            http.Error(*res, "El alumno proporcionado no existe", http.StatusNotFound)
+        }
+    // Devolver al cliente todos los alumnos junto a su lista de materias y calificación
+    } else {
+        // Si aún no hay alumnos registrados
+        if len((*server).Alumnos) == 0 {
+            res_json = []byte(`{"code": "empty"}`)
+        } else {
+            res_json, err = json.MarshalIndent((*server).Alumnos, "", "    ")
+        }
+    }
+    if err != nil {
+        http.Error(*res, err.Error(), http.StatusInternalServerError)
+        res_json = []byte(`{"code": "error"}`)
+    }
+    return res_json
+}
+
+func Delete(id uint64, res *http.ResponseWriter) []byte {
+    var res_json []byte
+    if _, exists := (*server).Alumnos[id]; !exists {
+        http.Error(*res, "El alumno proporcionado no existe", http.StatusBadRequest)
+        return res_json
+    }
+    for k, v := range (*server).Materias {
+        if _, exists := v.Value[id]; exists {
+            delete((*server).Materias[k].Value, id)
+        }
+    }
+    name := (*server).Alumnos[id].Name
+    delete((*server).Alumnos, id)
+    fmt.Printf("[El alumno %s ha sido eliminado exitosamente]\n", name)
+    res_json = []byte(`{"code": "ok"}`)
+    return res_json
+}
+
+func Put(a ModJson, res *http.ResponseWriter) []byte {
+    var res_json []byte
+    if _, exists := (*server).Alumnos[a.Alumno]; !exists {
+        http.Error(*res, "El alumno proporcionado no existe", http.StatusBadRequest)
+        return res_json
+    } else if _, exists := (*server).Materias[a.Materia]; !exists {
+        http.Error(*res, "La materia proporcionada no existe", http.StatusBadRequest)
+        return res_json
+    }
+    node := (*server).Alumnos[a.Alumno].Value[a.Materia]
+    node.Value = a.Cal
+    (*server).Alumnos[a.Alumno].Value[a.Materia] = node
+
+    node = (*server).Materias[a.Materia].Value[a.Alumno]
+    node.Value = a.Cal
+    (*server).Materias[a.Materia].Value[a.Alumno] = node
+    res_json = []byte(`{"code": "ok"}`)
+    return res_json
+}
+
 func CrudHandler(res http.ResponseWriter, req *http.Request) {
+    var res_json []byte
     switch req.Method {
     // Agregar alumno, materia y calificación
     case "POST":
@@ -192,36 +271,13 @@ func CrudHandler(res http.ResponseWriter, req *http.Request) {
             return
         }
         Add(args)
-        res_json := []byte(`{"code": "ok"}`)
+        res_json = []byte(`{"code": "ok"}`)
         res.Header().Set("Content-Type", "application/json")
         res.Write(res_json)
     // Devuelve alumnos
     case "GET":
-        var res_json []byte
-        var err error
-        var id uint64
         idStr := strings.TrimPrefix(req.URL.Path, "/data/")
-        // Devolver al cliente las materias (con calificación) de un alumno por id (GET/{id})
-        if idStr != "/data" {
-            id, err = strconv.ParseUint(idStr, 10, 64)
-            if _, exists := (*server).Alumnos[id]; exists {
-                res_json, err = json.MarshalIndent((*server).Alumnos[id], "", "    ")
-            } else {
-                http.Error(res, "El alumno proporcionado no existe", http.StatusNotFound)
-            }
-        // Devolver al cliente todos los alumnos junto a su lista de materias y calificación
-        } else {
-            // Si aún no hay alumnos registrados
-            if len((*server).Alumnos) == 0 {
-                res_json = []byte(`{"code": "empty"}`)
-            } else {
-                res_json, err = json.MarshalIndent((*server).Alumnos, "", "    ")
-            }
-        }
-        if err != nil {
-            http.Error(res, err.Error(), http.StatusInternalServerError)
-            return
-        }
+        res_json := Get(idStr, &res)
         res.Header().Set("Content-Type", "application/json")
         res.Write(res_json)
     // Eliminar por id un alumno (DELETE/{id})
@@ -231,20 +287,20 @@ func CrudHandler(res http.ResponseWriter, req *http.Request) {
             http.Error(res, "El alumno proporcionado no existe", http.StatusNotFound)
             return
         }
-        if _, exists := (*server).Alumnos[id]; exists {
-            for k, v := range (*server).Materias {
-                if _, exists := v.Value[id]; exists {
-                    delete((*server).Materias[k].Value, id)
-                }
-            }
-            name := (*server).Alumnos[id].Name
-            delete((*server).Alumnos, id)
-            fmt.Printf("[El alumno %s ha sido eliminado exitosamente]\n", name)
-            printData("Alumnos:", (*server).Alumnos)
-            printData("Materias:", (*server).Materias)
-        }
+        res_json = Delete(id, &res)
+        res.Header().Set("Content-Type", "application/json")
+        res.Write(res_json)
     // TODO: Modificar la calificación de un alumno (PUT/JSON)
     case "PUT":
+        var a ModJson
+        err := json.NewDecoder(req.Body).Decode(&a)
+        if err != nil {
+            http.Error(res, err.Error(), http.StatusBadRequest)
+            return
+        }
+        res_json = Put(a, &res)
+        res.Header().Set("Content-Type", "application/json")
+        res.Write(res_json)
     }
 }
 
@@ -252,14 +308,16 @@ func main() {
     s := new(Server)
     s.Alumnos = make(map[uint64]InnerMap)
     s.Materias = make(map[uint64]InnerMap)
+    fmt.Println("Iniciando server RPC...")
     go handleRpc(s)
-    // Pointer used for a singleton style
+    // Puntero usado para diseño singleton
     server = s
     // Peticiones HTTP
-    http.HandleFunc("/add", CrudHandler)
-    http.HandleFunc("/data", CrudHandler)
-    http.HandleFunc("/data/", CrudHandler)
-    http.HandleFunc("/delete/", CrudHandler)
-    http.HandleFunc("/modify", CrudHandler)
+    http.HandleFunc("/add", CrudHandler) // POST (añadir alumno)
+    http.HandleFunc("/data", CrudHandler) // GET (Obtener todos los alumnos)
+    http.HandleFunc("/data/", CrudHandler) // GET (Obtener un alumno por id)
+    http.HandleFunc("/delete/", CrudHandler) // DELETE (Eliminar un alumno por id)
+    http.HandleFunc("/modify", CrudHandler) // PUT (Modificar un alumno por JSON)
+    fmt.Println("Iniciando server HTTP...")
     http.ListenAndServe(":9000", nil)
 }
